@@ -2,54 +2,48 @@
 """Test module for client"""
 import unittest
 from unittest.mock import patch, PropertyMock
-from parameterized import parameterized
+from parameterized import parameterized, parameterized_class
 from client import GithubOrgClient
+from fixtures import TEST_PAYLOAD
+import requests
 
 
-class TestGithubOrgClient(unittest.TestCase):
-    """Test class for GithubOrgClient"""
+@parameterized_class([
+    {
+        'org_payload': TEST_PAYLOAD[0][0],
+        'repos_payload': TEST_PAYLOAD[0][1],
+        'expected_repos': TEST_PAYLOAD[0][2],
+        'apache2_repos': TEST_PAYLOAD[0][3],
+    }
+])
+class TestIntegrationGithubOrgClient(unittest.TestCase):
+    """Integration test class for GithubOrgClient"""
 
-    @parameterized.expand([
-        ("google"),
-        ("abc")
-    ])
-    @patch('client.get_json')
-    def test_org(self, org_name, mock_get_json):
-        """Test that GithubOrgClient.org returns correct value"""
-        test_client = GithubOrgClient(org_name)
-        test_client.org()
-        mock_get_json.assert_called_once_with(
-            f"https://api.github.com/orgs/{org_name}"
-        )
+    @classmethod
+    def setUpClass(cls):
+        """Set up class fixtures"""
+        cls.get_patcher = patch('requests.get')
+        cls.mock_get = cls.get_patcher.start()
+
+        def side_effect(url):
+            """Side effect function for requests.get mock"""
+            mock_response = requests.Response()
+            
+            if url.endswith('/orgs/google'):
+                mock_response.json = lambda: cls.org_payload
+            elif url.endswith('/orgs/google/repos'):
+                mock_response.json = lambda: cls.repos_payload
+            
+            return mock_response
+
+        cls.mock_get.side_effect = side_effect
+
+    @classmethod
+    def tearDownClass(cls):
+        """Tear down class fixtures"""
+        cls.get_patcher.stop()
 
     def test_public_repos(self):
-        """Test GithubOrgClient.public_repos method"""
-        test_payload = {
-            'repos_url': 'https://api.github.com/orgs/google/repos',
-            'repos': [
-                {
-                    'id': 1,
-                    'name': 'repo1'
-                },
-                {
-                    'id': 2,
-                    'name': 'repo2'
-                }
-            ]
-        }
-
-        expected_repos = ['repo1', 'repo2']
-
-        with patch('client.GithubOrgClient.org',
-                  new_callable=PropertyMock) as mock_org:
-            mock_org.return_value = test_payload
-
-            with patch('client.get_json') as mock_json:
-                mock_json.return_value = test_payload['repos']
-
-                client = GithubOrgClient('google')
-                repos = client.public_repos()
-
-                self.assertEqual(repos, expected_repos)
-                mock_org.assert_called_once()
-                mock_json.assert_called_once()
+        """Integration test for public_repos method"""
+        client = GithubOrgClient('google')
+        self.assertEqual(client.public_repos(), self.expected_repos)
